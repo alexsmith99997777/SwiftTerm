@@ -488,8 +488,13 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
 
     /// Marked (uncommitted) text from an input source (IME, dictation, etc.).
     private var markedTextStorage: NSAttributedString?
+    /// The input method's selection inside the marked text (UTF-16 offsets into it, clamped).
+    /// A zero-length range is the composition insertion point; a longer one the selected clause.
     private var markedSelectedRange: NSRange = NSRange(location: NSNotFound, length: 0)
     private var markedTextOverlay: DictationOverlayTextView?
+    /// The composition caret: drawn where `markedSelectedRange` sits in the overlay's layout.
+    /// The terminal cursor is the composition's anchor and does not move until the commit.
+    private var compositionCaretView: CompositionCaretView?
     private var progressBarView: TerminalProgressBarView?
     private var progressReportTimer: Timer?
     private enum UIShutdownState {
@@ -2634,10 +2639,23 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
         default:
             markedTextStorage = nil
         }
-        markedSelectedRange = selectedRange
+        markedSelectedRange = Self.clampedMarkedRange(selectedRange, length: markedTextStorage?.length ?? 0)
         // An empty marked string ends the preedit. hasMarkedText() reports
         // the same state to AppKit.
         kittyIsComposing = markedTextStorage != nil
+        updateMarkedTextOverlay()
+    }
+
+    /// A range inside the marked text; `NSNotFound` or anything past the end becomes the end.
+    private static func clampedMarkedRange(_ range: NSRange, length: Int) -> NSRange {
+        guard range.location != NSNotFound else { return NSRange(location: length, length: 0) }
+        let location = min(max(range.location, 0), length)
+        return NSRange(location: location, length: min(max(range.length, 0), length - location))
+    }
+
+    /// The anchor cursor moved (server output, a resize, a font change) while composing: the
+    /// preview and its caret follow it.
+    func updateMarkedTextOverlayAfterCursorMove() {
         updateMarkedTextOverlay()
     }
 
@@ -2647,6 +2665,12 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
         guard let markedTextStorage, markedTextStorage.length > 0 else {
             markedTextOverlay?.removeFromSuperview()
             markedTextOverlay = nil
+            compositionCaretView?.removeFromSuperview()
+            compositionCaretView = nil
+            // The terminal caret comes back where the server left it (the Metal
+            // path keeps its own caret hidden).
+            caretView?.isHidden = metalView != nil
+            inputContext?.invalidateCharacterCoordinates()
             return
         }
 
@@ -2728,6 +2752,78 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
             width: overlayWidth,
             height: overlayHeight
         )
+
+        // While composing, the only caret is the composition's: the terminal
+        // cursor stays the anchor underneath and would otherwise show a second,
+        // stationary caret at the start of the marked text.
+        caretView.isHidden = true
+        updateCompositionCaret(in: overlay)
+        inputContext?.invalidateCharacterCoordinates()
+    }
+
+    /// Positions the composition caret at the input method's selection: a bar at the insertion
+    /// point, or a translucent band over the selected clause.
+    private func updateCompositionCaret(in overlay: DictationOverlayTextView) {
+        guard let rect = markedTextRect(for: markedSelectedRange, in: overlay, firstLineOnly: false) else {
+            compositionCaretView?.removeFromSuperview()
+            compositionCaretView = nil
+            return
+        }
+        let indicator: CompositionCaretView
+        if let existing = compositionCaretView {
+            indicator = existing
+        } else {
+            indicator = CompositionCaretView(frame: .zero)
+            indicator.wantsLayer = true
+            addSubview(indicator, positioned: .above, relativeTo: overlay)
+            compositionCaretView = indicator
+        }
+        var frame = overlay.convert(rect, to: self)
+        if markedSelectedRange.length == 0 {
+            frame.size.width = max(1, round(cellDimension.width / 4))
+            indicator.layer?.backgroundColor = caretView.caretColor.cgColor
+        } else {
+            indicator.layer?.backgroundColor = selectedTextBackgroundColor.withAlphaComponent(0.35).cgColor
+        }
+        indicator.frame = frame.integral
+    }
+
+    /// Where `range` of the marked text lies in the overlay's own (flipped) coordinates: the
+    /// insertion point for an empty range (after the whole string at its end), else the
+    /// clause's rectangle (its first line fragment when `firstLineOnly`, as `firstRect`
+    /// reports it). Uses the overlay's layout, so wrapping, kerning and fallback fonts are
+    /// what the eye sees.
+    private func markedTextRect(for range: NSRange, in overlay: NSTextView, firstLineOnly: Bool) -> NSRect? {
+        guard let layoutManager = overlay.layoutManager, let container = overlay.textContainer else { return nil }
+        let length = overlay.textStorage?.length ?? 0
+        let range = Self.clampedMarkedRange(range, length: length)
+        layoutManager.ensureLayout(for: container)
+        let origin = overlay.textContainerOrigin
+        func inOverlay(_ rect: NSRect) -> NSRect { rect.offsetBy(dx: origin.x, dy: origin.y) }
+        if range.length > 0 {
+            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            if firstLineOnly {
+                var first: NSRect?
+                layoutManager.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: glyphs, in: container) { rect, stop in
+                    first = rect
+                    stop.pointee = true
+                }
+                if let first { return inOverlay(first) }
+            }
+            return inOverlay(layoutManager.boundingRect(forGlyphRange: glyphs, in: container))
+        }
+        guard length > 0 else { return NSRect(x: origin.x, y: origin.y, width: 0, height: cellDimension.height) }
+        if range.location < length {
+            let glyph = layoutManager.glyphIndexForCharacter(at: range.location)
+            let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            let x = layoutManager.location(forGlyphAt: glyph).x
+            return inOverlay(NSRect(x: fragment.minX + x, y: fragment.minY, width: 0, height: fragment.height))
+        }
+        // After the last character: its advance, on its own line.
+        let glyph = layoutManager.glyphIndexForCharacter(at: length - 1)
+        let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let last = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+        return inOverlay(NSRect(x: last.maxX, y: fragment.minY, width: 0, height: fragment.height))
     }
 
     private func kittyEncoder() -> KittyKeyboardEncoder {
@@ -3205,7 +3301,12 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
     
     // NSTextInputClient protocol implementation
     open func selectedRange() -> NSRange {
-        withTerminal { terminal in
+        // While composing, the document is the marked text (`markedRange` starts at 0) and
+        // the selection is the input method's own, so the candidate window follows it.
+        if let marked = markedTextStorage {
+            return Self.clampedMarkedRange(markedSelectedRange, length: marked.length)
+        }
+        return withTerminal { terminal in
             if let selection = self.selection, selection.active {
                 let displayBuffer = terminal.displayBuffer
                 var startLocation = (selection.start.row * displayBuffer.rows) + selection.start.col
@@ -3257,7 +3358,21 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
     
     // NSTextInputClient protocol implementation
     open func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
-        actualRange?.pointee = range
+        // A range of the marked text: where that part of the composition is drawn, so the
+        // candidate panel anchors to the clause being converted, not to the anchor cursor.
+        if let marked = markedTextStorage, let overlay = markedTextOverlay, range.location != NSNotFound {
+            let clamped = Self.clampedMarkedRange(range, length: marked.length)
+            actualRange?.pointee = clamped
+            if let rect = markedTextRect(for: clamped, in: overlay, firstLineOnly: true) {
+                var local = overlay.convert(rect, to: self)
+                if local.width == 0 { local.size.width = 1 }
+                if let r = window?.convertToScreen(convert(local, to: nil)) {
+                    return r
+                }
+            }
+        } else {
+            actualRange?.pointee = range
+        }
         
         if let r = window?.convertToScreen(convert(caretView!.frame, to: nil)) {
             return r
@@ -4912,6 +5027,11 @@ extension TerminalViewDelegate {
 /// portion occupied by pre-existing terminal text (e.g. the prompt), so this
 /// drawing strategy leaves that area untouched while still covering wrapped
 /// lines below.
+/// The insertion indicator inside marked text (see `TerminalView.updateCompositionCaret`).
+final class CompositionCaretView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 final class DictationOverlayTextView: NSTextView {
     var overlayBackgroundColor: NSColor = .clear {
         didSet { needsDisplay = true }
