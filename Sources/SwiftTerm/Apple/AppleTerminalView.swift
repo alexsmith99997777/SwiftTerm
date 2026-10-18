@@ -4055,6 +4055,16 @@ extension TerminalView {
         frameSignal.markDirty()
     }
 
+    /// Queues a coalesced frame without waiting for the next display-link tick.
+    ///
+    /// Hosts with an already-paced frame source can avoid a second cadence wait.
+    /// Preparation and drawing retain their normal thread ownership; this call
+    /// does not draw synchronously. Safe to call from any thread.
+    public nonisolated func requestImmediateRedraw ()
+    {
+        frameSignal.requestImmediateTick()
+    }
+
     /// Asks for a frame ahead of the display cadence. Safe from any thread.
     ///
     /// With a render loop running this signals the loop directly instead of

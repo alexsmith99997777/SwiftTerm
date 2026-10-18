@@ -358,6 +358,28 @@ struct RowDrawData {
     var placeholderImageDraws: [ImageDraw]
     var overImageDraws: [ImageDraw]
     var otherImageDraws: [ImageDraw]
+
+    /// Moves image-free row data without shaping the unchanged text again.
+    /// Copy-on-write arrays keep buffers used by an in-flight frame immutable.
+    func translatedVertically(by offset: Float) -> RowDrawData {
+        var result = self
+        for index in result.backgroundCells.indices {
+            result.backgroundCells[index].position.y += offset
+        }
+        for index in result.powerlineJoinCells.indices {
+            result.powerlineJoinCells[index].position.y += offset
+        }
+        for index in result.glyphCellsGray.indices {
+            result.glyphCellsGray[index].position.y += offset
+        }
+        for index in result.glyphCellsColor.indices {
+            result.glyphCellsColor[index].position.y += offset
+        }
+        for index in result.decorationCells.indices {
+            result.decorationCells[index].position.y += offset
+        }
+        return result
+    }
 }
 
 struct RowDrawBuffers {
@@ -386,6 +408,7 @@ struct RowCacheEntry {
     // generation pins the content; the revision pins style/bidi/image state.
     var sourceGeneration: UInt64
     var revision: UInt64
+    var canRelocate: Bool
     var data: RowDrawData?
     var buffers: RowDrawBuffers?
 }
@@ -468,6 +491,9 @@ struct CacheSignature: Hashable {
     let bidiHostPolicy: BidiHostPolicy
     let attributeContextIdentity: UInt64
     let glyphFallbackIdentity: UInt64
+    let fontSmoothing: Bool
+    let antiAliasCustomBlockGlyphs: Bool
+    let customBlockGlyphs: Bool
 }
 
 struct MetalProfileCounters {
@@ -895,6 +921,7 @@ final class MetalTerminalRenderer {
     private var rowCache: [Int: RowCacheEntry] = [:]
     private var cacheBufferingMode: MetalBufferingMode?
     private var cacheSignature: CacheSignature?
+    private var cacheStyle: SnapshotStyle?
     private var atlasInvalidatedDuringBuild = false
     private let redrawState: MetalRedrawState
     private let cursorBlinkController: MetalCursorBlinkController
@@ -1489,7 +1516,10 @@ final class MetalTerminalRenderer {
                                        kittyStamp: kittyStamp,
                                        bidiHostPolicy: context.bidiHostPolicy,
                                        attributeContextIdentity: context.identity,
-                                       glyphFallbackIdentity: context.glyphFallbackProvider?.cacheIdentity ?? 0)
+                                       glyphFallbackIdentity: context.glyphFallbackProvider?.cacheIdentity ?? 0,
+                                       fontSmoothing: context.fontSmoothing,
+                                       antiAliasCustomBlockGlyphs: context.antiAliasCustomBlockGlyphs,
+                                       customBlockGlyphs: context.customBlockGlyphs)
         let signatureChanged = signature != cacheSignature
         if signatureChanged {
             if signature.glyphFallbackIdentity != cacheSignature?.glyphFallbackIdentity {
@@ -1512,6 +1542,25 @@ final class MetalTerminalRenderer {
         }
 
         let needsFullRebuild = signatureChanged || rowCache.isEmpty
+
+        // Row.revision belongs to a snapshot slot, so a line moved by CSI S/T
+        // gets a new revision even when its source cells are unchanged. Reuse
+        // the previous frame by source identity/generation before overwriting
+        // those slots. Position-dependent styles, layouts and images retain
+        // the existing rebuild path. Integral pixel steps preserve rounding.
+        let canRelocate = !needsFullRebuild &&
+            cacheStyle?.hasSameValue(as: snapshot.style) == true &&
+            !snapshot.style.selectionActive && snapshot.style.linkHighlightRange == nil &&
+            !snapshot.hasAnyImages && kittyStamp.imagesCount == 0 &&
+            kittyStamp.placementsCount == 0 &&
+            (cellHeight * scale).rounded() == cellHeight * scale
+        var previousRows: [ObjectIdentifier: (row: Int, entry: RowCacheEntry)] = [:]
+        if canRelocate {
+            for (row, entry) in rowCache where entry.canRelocate {
+                previousRows[entry.sourceIdentity] = (row, entry)
+            }
+        }
+        cacheStyle = snapshot.style
 
         var rows: [RowDrawBuffers] = []
         var frameData: FrameDrawData?
@@ -1536,6 +1585,20 @@ final class MetalTerminalRenderer {
             }
             let sourceIdentity = snapshotRow.sourceIdentity!
             var entry = rowCache[absoluteRow]
+            let rowCanRelocate = snapshotRow.bidiLayout == nil && snapshotRow.images.isEmpty
+            if canRelocate, rowCanRelocate,
+               let previous = previousRows[sourceIdentity], previous.row != absoluteRow,
+               previous.entry.sourceGeneration == snapshotRow.sourceGeneration,
+               let previousData = previous.entry.data {
+                let offset = Float(CGFloat(previous.row - absoluteRow) * cellHeight * scale)
+                let data = previousData.translatedVertically(by: offset)
+                entry = RowCacheEntry(sourceIdentity: sourceIdentity,
+                                      sourceGeneration: snapshotRow.sourceGeneration,
+                                      revision: snapshotRow.revision,
+                                      canRelocate: true, data: data,
+                                      buffers: bufferingMode == .perRowPersistent ? makeRowBuffers(from: data) : nil)
+                rowCache[absoluteRow] = entry
+            }
             let cacheValid = entry?.sourceIdentity == sourceIdentity &&
                 entry?.sourceGeneration == snapshotRow.sourceGeneration &&
                 entry?.revision == snapshotRow.revision
@@ -1561,6 +1624,7 @@ final class MetalTerminalRenderer {
                 entry = RowCacheEntry(sourceIdentity: sourceIdentity,
                                       sourceGeneration: snapshotRow.sourceGeneration,
                                       revision: snapshotRow.revision,
+                                      canRelocate: rowCanRelocate,
                                       data: rowData, buffers: buffers)
                 rowCache[absoluteRow] = entry
                 rowBuffers = buffers
@@ -1580,6 +1644,7 @@ final class MetalTerminalRenderer {
                     entry = RowCacheEntry(sourceIdentity: sourceIdentity,
                                           sourceGeneration: snapshotRow.sourceGeneration,
                                           revision: snapshotRow.revision,
+                                          canRelocate: rowCanRelocate,
                                           data: rowData, buffers: cached.buffers)
                     rowCache[absoluteRow] = entry
                 }
