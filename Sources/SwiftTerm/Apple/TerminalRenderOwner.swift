@@ -852,6 +852,16 @@ final class TerminalRenderOwner: Sendable {
         withRenderState { $0.renderer?.resetCursorBlinkAfterInput() }
     }
 
+    /// Whether the Metal cursor is in its shown phase; nil without a Metal renderer.
+    var metalCursorBlinkOnForTesting: Bool? {
+        withRenderState { $0.renderer?.cursorBlinkOnForTesting }
+    }
+
+    /// Puts a blinking Metal cursor in its hidden phase.
+    func hideMetalCursorBlinkForTesting() {
+        withRenderState { $0.renderer?.hideCursorBlinkForTesting() }
+    }
+
     var metalHasPreparedSnapshot: Bool {
         withRenderState { $0.renderer?.hasPreparedSnapshot == true }
     }

@@ -4143,6 +4143,13 @@ final class MetalTerminalRenderer {
         cursorBlinkController.resetAfterInput()
     }
 
+    var cursorBlinkOnForTesting: Bool { redrawState.cursorBlinkOn }
+
+    func hideCursorBlinkForTesting() {
+        _ = redrawState.setCursorBlinkWanted(true)
+        if redrawState.cursorBlinkOn { redrawState.toggleCursorBlink() }
+    }
+
     private func pruneKittyTextureCache(kitty: SnapshotKitty) {
         let liveIds = kitty.renderSnapshot.imagesById
         if kittyTextureCache.isEmpty {

@@ -61,6 +61,19 @@ struct MetalToggleTests {
         #expect(cols > 0)
     }
 
+    /// A host that writes keys to its process itself never calls `send`; it
+    /// resets the blink explicitly, which must show a hidden Metal cursor.
+    @Test(.enabled(if: MetalToggleTests.metalIsUsable)) func explicitInputResetShowsHiddenCursor() throws {
+        let view = makeView()
+        defer { view.frameDriver.invalidate() }
+
+        try view.setUseMetal(true)
+        view.renderOwner.hideMetalCursorBlinkForTesting()
+        #expect(view.renderOwner.metalCursorBlinkOnForTesting == false)
+        view.resetCursorBlinkAfterInput()
+        #expect(view.renderOwner.metalCursorBlinkOnForTesting == true)
+    }
+
     /// Setting the value it already has must be a no-op, not a rebuild: hosts
     /// apply a preference to every terminal, including ones already in that
     /// state.

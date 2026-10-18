@@ -1400,6 +1400,18 @@ extension TerminalView {
         set { terminalFramePresentedHandler.replace(with: newValue) }
     }
 
+    /// Shows the cursor and restarts its blink interval, as input sent through
+    /// this view does. A host that delivers keyboard input to its process
+    /// itself, without `send`, calls this for each key press and repeat, so a
+    /// held key never reaches the blink's hidden phase.
+    @MainActor
+    public func resetCursorBlinkAfterInput() {
+        caretView?.resetBlinkAfterInput()
+#if canImport(MetalKit)
+        renderOwner.resetMetalCursorBlinkAfterInput()
+#endif
+    }
+
     @MainActor
     func configureInputSender() {
         let owner = renderOwner
@@ -1407,10 +1419,7 @@ extension TerminalView {
             guard let self else { return }
             self.ensureCaretIsVisible()
             if self.cursorBlinkResetsOnInput {
-                self.caretView?.resetBlinkAfterInput()
-#if canImport(MetalKit)
-                owner.resetMetalCursorBlinkAfterInput()
-#endif
+                self.resetCursorBlinkAfterInput()
             }
         }
         let deliverOnMain: @MainActor @Sendable ([UInt8]) -> Void = { [weak self] bytes in
