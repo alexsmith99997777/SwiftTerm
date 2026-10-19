@@ -539,6 +539,7 @@ struct FrameViewState: Sendable {
     let customBlockGlyphs: Bool
     let useBrightColors: Bool
     let minimumContrastRatio: CGFloat
+    let selectionKeepsCellColors: Bool
     let bidiHostPolicy: BidiHostPolicy
     let glyphFallbackProvider: (any TerminalGlyphFallbackProvider)?
 
@@ -580,6 +581,7 @@ struct FrameViewState: Sendable {
         customBlockGlyphs = view.customBlockGlyphs
         useBrightColors = view.useBrightColors
         minimumContrastRatio = view.minimumContrastRatio
+        selectionKeepsCellColors = view.selectionKeepsCellColors
         bidiHostPolicy = view.bidiHostPolicy
         glyphFallbackProvider = view.glyphFallbackProvider
     }
@@ -646,6 +648,7 @@ struct SnapshotRenderContext {
     let customBlockGlyphs: Bool
     let useBrightColors: Bool
     let minimumContrastRatio: CGFloat
+    let selectionKeepsCellColors: Bool
     let bidiHostPolicy: BidiHostPolicy
     let glyphFallbackProvider: (any TerminalGlyphFallbackProvider)?
     let cols: Int
@@ -705,6 +708,7 @@ struct SnapshotRenderContext {
         customBlockGlyphs = viewState.customBlockGlyphs
         useBrightColors = viewState.useBrightColors
         minimumContrastRatio = viewState.minimumContrastRatio
+        selectionKeepsCellColors = viewState.selectionKeepsCellColors
         bidiHostPolicy = viewState.bidiHostPolicy
         glyphFallbackProvider = viewState.glyphFallbackProvider
         self.cols = cols
@@ -726,6 +730,7 @@ struct SnapshotRenderContext {
         }
         identityHasher.combine(useBrightColors)
         identityHasher.combine(minimumContrastRatio)
+        identityHasher.combine(selectionKeepsCellColors)
         identity = UInt64(bitPattern: Int64(identityHasher.finalize()))
     }
 
@@ -4914,6 +4919,29 @@ extension TerminalView {
     public func selectNone () {
         withTerminal { _ in
             selection.selectNone()
+        }
+    }
+
+    /// Shows `start` up to `end` (exclusive, as the selection's own end) as the
+    /// selection. Rows are screen-relative: row 0 is the top visible row. For hosts
+    /// that keep the selection themselves and show only its visible part here.
+    public func select (from start: Position, to end: Position) {
+        withTerminal { terminal in
+            let yDisp = terminal.displayBuffer.yDisp
+            selection.setSelection(start: Position(col: start.col, row: start.row + yDisp),
+                                   end: Position(col: end.col, row: end.row + yDisp))
+        }
+    }
+
+    /// Selects what a double-click at `position` selects (a word, a run of spaces or a
+    /// balanced expression) and returns that range, end exclusive. Rows are
+    /// screen-relative, as in `select(from:to:)`.
+    public func selectWord (at position: Position) -> (start: Position, end: Position) {
+        withTerminal { terminal in
+            let buffer = terminal.displayBuffer
+            selection.selectWordOrExpression(at: Position(col: position.col, row: position.row + buffer.yDisp), in: buffer)
+            return (Position(col: selection.start.col, row: selection.start.row - buffer.yDisp),
+                    Position(col: selection.end.col, row: selection.end.row - buffer.yDisp))
         }
     }
 

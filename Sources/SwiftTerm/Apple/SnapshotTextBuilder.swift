@@ -308,6 +308,31 @@ final class SnapshotTextBuilder {
             ?? context.effectiveForegroundColor
     }
 
+    /// The selection color laid over a cell's own background. Renderers draw the
+    /// selection background in place of the cell's, so an explicit background is
+    /// composited here; a default background is clear, and the (translucent)
+    /// selection color shows over whatever is behind the view.
+    private func selectionBackground(over attributes: SnapshotTextAttributes,
+                                     context: SnapshotRenderContext) -> TTColor
+    {
+        let selection = context.selectedTextBackgroundColor
+        guard attributes[SwiftTermExplicitBackgroundKey] != nil,
+              let cell = attributes[.backgroundColor] as? TTColor,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let below = cell.cgColor.converted(to: space, intent: .defaultIntent, options: nil)?.components,
+              let above = selection.cgColor.converted(to: space, intent: .defaultIntent, options: nil)?.components,
+              below.count == 4, above.count == 4 else {
+            return selection
+        }
+        let alpha = above[3]
+        let outAlpha = alpha + below[3] * (1 - alpha)
+        guard outAlpha > 0 else { return selection }
+        func channel(_ index: Int) -> CGFloat {
+            (above[index] * alpha + below[index] * below[3] * (1 - alpha)) / outAlpha
+        }
+        return TTColor.make(red: channel(0), green: channel(1), blue: channel(2), alpha: outAlpha)
+    }
+
     /// Maps one terminal color to a platform color. Truecolor values are
     /// interned so repeated cells share the same object in renderer caches.
     func mapColor(color: Attribute.Color, isFg: Bool, isBold: Bool,
@@ -495,7 +520,9 @@ final class SnapshotTextBuilder {
                     if usesShapeColor {
                         batchAttributes[.foregroundColor] = shapeColor(of: attributes, context: context)
                     }
-                    if isSelected {
+                    if isSelected, context.selectionKeepsCellColors {
+                        batchAttributes[.selectionBackgroundColor] = selectionBackground(over: attributes, context: context)
+                    } else if isSelected {
                         batchAttributes[.selectionBackgroundColor] = context.selectedTextBackgroundColor
                         batchAttributes[.foregroundColor] = context.selectedTextForegroundColor
                         batchAttributes[SwiftTermShapeColorKey] = context.selectedTextForegroundColor

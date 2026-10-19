@@ -173,6 +173,54 @@ final class SelectionTests: TerminalDelegate {
         #expect(matchesSRGB(attributes[.underlineColor], selectionForeground))
         #expect(matchesSRGB(attributes[.strikethroughColor], selectionForeground))
     }
+
+    @Test func testSelectionCanKeepCellColorsUnderATranslucentBackground() {
+        let view = TerminalView(frame: CGRect(origin: .zero, size: .init(width: 320, height: 160)))
+        let overlay = NSColor(srgbRed: 0xD6 / 255.0, green: 0xD6 / 255.0, blue: 0xDC / 255.0, alpha: 0.28)
+        view.selectedTextBackgroundColor = overlay
+        view.selectionKeepsCellColors = true
+        view.feed(text: "\u{001B}[31;44mX\u{001B}[0mY")
+
+        func cellAttributes(_ column: Int) -> [NSAttributedString.Key: Any] {
+            let line = view.withTerminal { terminal in
+                view.buildAttributedStringLocked(row: 0, line: terminal.displayBuffer.lines[0], cols: terminal.cols)
+            }
+            let segment = line.segments.first { $0.column <= column && column < $0.column + $0.attributedString.length }!
+            return segment.attributedString.attributes(at: column - segment.column, effectiveRange: nil)
+        }
+        func srgb(_ value: Any?) -> [CGFloat]? {
+            guard let color = (value as? NSColor)?.usingColorSpace(.sRGB) else { return nil }
+            return [color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent]
+        }
+        func close(_ a: [CGFloat]?, _ b: [CGFloat]?) -> Bool {
+            guard let a, let b, a.count == b.count else { return false }
+            return zip(a, b).allSatisfy { abs($0 - $1) < 0.000_1 }
+        }
+
+        let plainX = cellAttributes(0), plainY = cellAttributes(1)
+        view.select(from: Position(col: 0, row: 0), to: Position(col: 2, row: 0))
+        let selectedX = cellAttributes(0), selectedY = cellAttributes(1)
+
+        // Text keeps its own color.
+        #expect(close(srgb(selectedX[.foregroundColor]), srgb(plainX[.foregroundColor])))
+        #expect(close(srgb(selectedY[.foregroundColor]), srgb(plainY[.foregroundColor])))
+        // An explicit background shows through 72% of the overlay; a default one is just the overlay.
+        let cell = srgb(plainX[.backgroundColor])!
+        let expected = (0..<3).map { cell[$0] * 0.72 + [0xD6, 0xD6, 0xDC][$0] / 255.0 * 0.28 } + [1]
+        #expect(close(srgb(selectedX[.selectionBackgroundColor]), expected))
+        #expect(close(srgb(selectedY[.selectionBackgroundColor]), srgb(overlay)))
+    }
+
+    @Test func testSelectWordReturnsScreenRelativeRange() {
+        let view = TerminalView(frame: CGRect(origin: .zero, size: .init(width: 320, height: 160)))
+        view.feed(text: "hello world")
+
+        let range = view.selectWord(at: Position(col: 7, row: 0))
+
+        #expect(range.start == Position(col: 6, row: 0))
+        #expect(range.end == Position(col: 11, row: 0))
+        #expect(view.getSelection() == "world")
+    }
 #endif
 
     // MARK: - Selection Tests Ported from Ghostty

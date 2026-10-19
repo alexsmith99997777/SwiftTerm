@@ -1791,6 +1791,16 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
     /// Controls weather to use high ansi colors, if false terminal will use bold text instead of high ansi colors
     public var useBrightColors: Bool = true
 
+    /// When true, selected cells keep their own text and background colors, and
+    /// `selectedTextBackgroundColor` (meant to be translucent) is laid over them;
+    /// `selectedTextForegroundColor` is then unused.
+    public var selectionKeepsCellColors: Bool = false {
+        didSet {
+            guard selectionKeepsCellColors != oldValue else { return }
+            colorsChanged ()
+        }
+    }
+
     /// The least contrast, as a WCAG ratio from 1 to 21, that text keeps against its background. Text whose colors
     /// fall below it, such as colors a program picked for a background of the other brightness, is darkened or
     /// lightened just enough to reach it. Powerline separators, box drawing, and block elements keep their colors.
