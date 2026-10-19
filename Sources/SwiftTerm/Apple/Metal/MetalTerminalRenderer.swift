@@ -881,6 +881,14 @@ final class MetalCursorBlinkController {
 }
 
 final class MetalTerminalRenderer {
+    /// The pass clears to the background premultiplied by its alpha, as every quad blends: the
+    /// layer composites premultiplied, so a translucent background's color left in the clear
+    /// came back wherever a translucent quad (a selection) blended onto it.
+    static func clearColor(for background: SIMD4<Float>) -> MTLClearColor {
+        MTLClearColorMake(Double(background.x * background.w), Double(background.y * background.w),
+                          Double(background.z * background.w), Double(background.w))
+    }
+
 #if canImport(os)
     private static let profileLog = OSLog(subsystem: "org.tirania.SwiftTerm", category: "MetalProfile")
     private static let profileEnabled = ProcessInfo.processInfo.environment["SWIFTTERM_PROFILE"] == "1"
@@ -1236,11 +1244,8 @@ final class MetalTerminalRenderer {
 #endif
         let encodeInterval = Profiling.begin(.metalEncode)
         defer { encodeInterval.end() }
-        let bgColor = colorToSIMD(renderContext.effectiveBackgroundColor)
-        passDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(Double(bgColor.x),
-                                                                         Double(bgColor.y),
-                                                                         Double(bgColor.z),
-                                                                         Double(bgColor.w))
+        passDescriptor.colorAttachments[0].clearColor =
+            Self.clearColor(for: colorToSIMD(renderContext.effectiveBackgroundColor))
         passDescriptor.colorAttachments[0].loadAction = .clear
 
 #if canImport(os)
