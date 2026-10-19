@@ -3642,7 +3642,7 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
         clipboard.setString(str, forType: .string)
     }
     
-    public override func selectAll(_ sender: Any?)
+    open override func selectAll(_ sender: Any?)
     {
         selectAll ()
     }
