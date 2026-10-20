@@ -47,6 +47,19 @@ struct TerminalViewHostAPITests {
         #expect(delegate.sent.isEmpty)
     }
 
+    @Test func textColorIsTheCellsDrawnForeground() {
+        let view = TerminalView(frame: CGRect(x: 0, y: 0, width: 400, height: 200))
+        view.nativeForegroundColor = .white
+        view.nativeBackgroundColor = .black
+        // Plain, then true-colour red, then reverse video on the default pair.
+        view.feed(text: "a\u{1b}[38;2;255;0;0mb\u{1b}[0m\u{1b}[7mc\u{1b}[0m")
+        let rgb = { (color: NSColor?) in color?.usingColorSpace(.deviceRGB).map { [$0.redComponent, $0.greenComponent, $0.blueComponent] } }
+        #expect(rgb(view.textColor(column: 0, row: 0)) == [1, 1, 1])
+        #expect(rgb(view.textColor(column: 1, row: 0)) == [1, 0, 0])
+        #expect(rgb(view.textColor(column: 2, row: 0)) == [0, 0, 0])
+        #expect(view.textColor(column: 0, row: 999) == nil)
+    }
+
     @Test func navigationKeysUseNormalAndApplicationModes() async {
         let view = TerminalView(frame: CGRect(x: 0, y: 0, width: 400, height: 200))
         let delegate = RecordingDelegate()

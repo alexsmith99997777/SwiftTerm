@@ -2290,6 +2290,30 @@ extension TerminalView {
         return result
     }
 
+    /// The colour the text in a visible cell is drawn in: its foreground after reverse video and
+    /// bold-bright, from the current palette (OSC 4 changes included). `row` counts from the top
+    /// of the viewport. Nil outside it. For a host that decorates text in the text's own colour.
+    #if os(macOS)
+    public func textColor(column: Int, row: Int) -> NSColor? { textColorLocked(column: column, row: row) }
+    #else
+    public func textColor(column: Int, row: Int) -> UIColor? { textColorLocked(column: column, row: row) }
+    #endif
+
+    private func textColorLocked(column: Int, row: Int) -> TTColor? {
+        guard terminal != nil else { return nil }
+        return withTerminal { terminal in
+            let buffer = terminal.displayBuffer
+            let line = buffer.yDisp + row
+            guard row >= 0, row < buffer.rows, line < buffer.lines.count, column >= 0, column < buffer.cols else { return nil }
+            let attribute = buffer.lines[line].packedAttribute(at: column)
+            var fg = attribute.fg
+            if attribute.style.contains(.inverse) {
+                fg = attribute.bg == .defaultColor ? .defaultInvertedColor : attribute.bg
+            }
+            return mapColor(color: fg, isFg: true, isBold: attribute.style.contains(.bold), useBrightColors: useBrightColors)
+        }
+    }
+
     func visibleBlinkRows() -> [Int] {
         guard terminal != nil else { return [] }
         return withTerminal { terminal in
