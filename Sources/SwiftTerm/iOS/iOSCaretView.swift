@@ -31,6 +31,13 @@ class CaretView: UIView {
             updateCursorStyle()
         }
     }
+    /// While tracking focus, whether the caret is drawn hollow without it. Off, focus decides
+    /// only whether a blinking style blinks: the caret stays solid and steady without it.
+    var hollowWithoutFocus = true {
+        didSet {
+            updateView()
+        }
+    }
     
     public init (frame: CGRect, cursorStyle: CursorStyle, terminal: TerminalView)
     {
@@ -177,7 +184,7 @@ class CaretView: UIView {
         context.scaleBy (x: 1, y: -1)
         context.translateBy(x: 0, y: -frame.height)
 
-        drawCursor(in: context, hasFocus: tracksFocus ? (superview?.isFirstResponder ?? true) : true)
+        drawCursor(in: context, hasFocus: tracksFocus && hollowWithoutFocus ? (superview?.isFirstResponder ?? true) : true)
     }
 
 }

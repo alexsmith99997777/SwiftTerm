@@ -277,6 +277,21 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         }
     }
 
+    /// While `caretViewTracksFocus` is on, whether the caret is drawn hollow when the view
+    /// isn't first responder (the default). Off, it stays solid and only stops blinking, as a
+    /// caret does in a text field that has lost the keyboard.
+    public var caretViewHollowWithoutFocus: Bool {
+        get {
+            return caretView?.hollowWithoutFocus ?? true
+        }
+        set {
+            caretView?.hollowWithoutFocus = newValue
+#if canImport(MetalKit)
+            frameDriver.markDirty()
+#endif
+        }
+    }
+
     /// Keeps a blinking cursor visible while input is being sent by restarting
     /// its blink interval after every input payload. Defaults to `true`.
     public var cursorBlinkResetsOnInput = true
