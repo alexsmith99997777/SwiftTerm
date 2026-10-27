@@ -1719,6 +1719,19 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
         TerminalView.onFramePresented?()
     }
     
+    /// Draws the visible screen into `context` (origin bottom-left, y up, one point per unit of
+    /// `bounds`) as the Core Graphics renderer draws it, whichever renderer shows the view. For a
+    /// host that keeps a picture of the terminal: a presented Metal frame can't be read back, so
+    /// `cacheDisplay` leaves a Metal terminal blank. Cells with the default background stay
+    /// transparent, as on screen, where the layer's background shows through.
+    public func drawContents(in context: CGContext) {
+        // The bottom strip's fill goes through the current graphics context, as in `draw(_:)`.
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        drawTerminalContents(dirtyRect: bounds, context: context, bufferOffset: 0, freshSnapshot: true)
+    }
+
     public override func cursorUpdate(with event: NSEvent)
     {
         NSCursor.iBeam.set ()

@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import Metal
 import Testing
 @testable import SwiftTerm
 
@@ -45,6 +46,30 @@ struct TerminalViewHostAPITests {
 
         await Task.yield()
         #expect(delegate.sent.isEmpty)
+    }
+
+    @Test func drawContentsPaintsTheTextWithTheMetalRendererOn() throws {
+        let view = TerminalView(frame: CGRect(x: 0, y: 0, width: 400, height: 200))
+        view.nativeForegroundColor = .white
+        view.nativeBackgroundColor = .black
+        if MTLCreateSystemDefaultDevice() != nil { try view.setUseMetal(true) }
+        view.feed(text: "drawContents paints this line")
+        let width = 400, height = 200
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                              space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        view.drawContents(in: context)
+        // The bitmap's first bytes are the image's top row.
+        let pixels = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        var bright = (top: 0, below: 0)
+        for y in 0..<height {
+            for x in 0..<width where pixels[(y * context.bytesPerRow) + x * 4] > 128 {
+                if y < 40 { bright.top += 1 } else { bright.below += 1 }
+            }
+        }
+        // The text in the first row of cells; nothing bright below it, the strip under the last
+        // row included (it takes the terminal's background).
+        #expect(bright.top > 50)
+        #expect(bright.below == 0)
     }
 
     @Test func textColorIsTheCellsDrawnForeground() {

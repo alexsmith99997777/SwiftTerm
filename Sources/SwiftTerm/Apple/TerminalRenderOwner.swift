@@ -747,13 +747,31 @@ final class TerminalRenderOwner: Sendable {
         return result
     }
 
+    /// `fresh`: a snapshot of its own, refreshed now, for a draw outside the frame loop (a host's
+    /// picture of a view the Metal renderer shows). The shared snapshot and its change tracking
+    /// stay as the frame loop left them, so the renderer misses no changed row.
     @MainActor
     func withSnapshotForDrawing (
         viewState: FrameViewState,
+        fresh: Bool = false,
         _ body: (TerminalSnapshot, SnapshotRenderContext) -> Void
     ) {
         withRenderState { _ in
-            guard let snapshot = currentSession()?.snapshot else { return }
+            guard let session = currentSession() else { return }
+            let snapshot: TerminalSnapshot
+            if fresh {
+                snapshot = TerminalSnapshot()
+                let terminal = session.terminal
+                let result = terminal.terminalLock.withLock {
+                    snapshot.refresh(
+                        terminal: terminal,
+                        viewState: viewState,
+                        selection: SnapshotSelectionState(selection: session.selection))
+                }
+                guard result == .refreshed else { return }
+            } else {
+                snapshot = session.snapshot
+            }
             let context = snapshot.renderContext ??
                 SnapshotRenderContext(viewState: viewState, snapshot: snapshot)
             body(snapshot, context)

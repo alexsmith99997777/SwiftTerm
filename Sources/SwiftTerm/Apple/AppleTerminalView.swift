@@ -3165,7 +3165,7 @@ extension TerminalView {
 
     
     // TODO: this should not render any lines outside the dirtyRect
-    func drawTerminalContents (dirtyRect: TTRect, context: CGContext, bufferOffset: Int)
+    func drawTerminalContents (dirtyRect: TTRect, context: CGContext, bufferOffset: Int, freshSnapshot: Bool = false)
     {
         // The Core Graphics draw: glyph shaping and painting from the snapshot,
         // with no terminal lock held. The Metal path has its own Metal.Draw
@@ -3180,7 +3180,7 @@ extension TerminalView {
         let kittyCellWidth = cellDimension.width
         let kittyCellHeight = cellDimension.height
         let kittyImageScale = getImageScale()
-        renderOwner.withSnapshotForDrawing(viewState: viewState) { snapshot, renderContext in
+        renderOwner.withSnapshotForDrawing(viewState: viewState, fresh: freshSnapshot) { snapshot, renderContext in
         let yOffset = renderContext.baselineOffset
         #if os(macOS)
         let renderBufferOffset = snapshot.yDisp
