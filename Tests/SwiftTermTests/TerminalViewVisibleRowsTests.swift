@@ -18,6 +18,26 @@ struct TerminalViewVisibleRowsTests {
         return seen
     }
 
+    /// Herdr wraps each frame in DECSET 2026 and Herdi feeds a frame whole: a feed that sets and clears
+    /// synchronized output must still be drawn once it ends (the text, not only the caret).
+    @MainActor
+    @Test func aFrameThatSetsAndClearsSynchronizedOutputInOneFeedIsDrawn() {
+        let view = TerminalView(frame: CGRect(origin: .zero, size: .init(width: 640, height: 320)))
+        // Herdr's frame (render_ansi.rs): the cursor hidden inside the synchronized span, moved and shown after it.
+        view.feed(text: "\u{1b}[?2026h\u{1b}[?25lhello\u{1b}[?2026l\u{1b}[1;6H\u{1b}[?25h")
+        let expected = ["hello"]
+        #expect(rows(view, 0..<1, equal: expected) == expected)
+        #expect(!view.withTerminal { $0.synchronizedOutputActive })
+        // The next frames as Herdr's would come: an echo of typing, then a frame that only moves the caret.
+        view.feed(text: "\u{1b}[?2026h\u{1b}[?25l\u{1b}[2;1Hworld\u{1b}[?2026l\u{1b}[2;6H\u{1b}[?25h")
+        let both = ["hello", "world"]
+        #expect(rows(view, 0..<2, equal: both) == both)
+        view.feed(text: "\u{1b}[?2026h\u{1b}[?25l\u{1b}[?2026l\u{1b}[1;1H\u{1b}[?25h")
+        view.feed(text: "\u{1b}[?2026h\u{1b}[?25l\u{1b}[2;1Hagain\u{1b}[?2026l\u{1b}[2;6H\u{1b}[?25h")
+        let again = ["hello", "again"]
+        #expect(rows(view, 0..<2, equal: again) == again)
+    }
+
     @MainActor
     @Test func viewReportsTheRowsAskedForAsTheSnapshotReadsThem() {
         let view = TerminalView(frame: CGRect(origin: .zero, size: .init(width: 640, height: 320)))
