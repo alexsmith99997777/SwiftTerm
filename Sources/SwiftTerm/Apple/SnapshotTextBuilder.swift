@@ -273,7 +273,9 @@ final class SnapshotTextBuilder {
             ltrWritingDirectionKey: ltrWritingDirectionValue,
             .paragraphStyle: ltrParagraphStyle,
         ]
-        if background != .defaultColor {
+        // A cell painted exactly the host's named colour is drawn as default (`backgroundDrawnAsDefault`): no
+        // fill, the surface behind the view shows through; the stored cell keeps the program's colour.
+        if background != .defaultColor && background != context.backgroundDrawnAsDefault {
             result[SwiftTermExplicitBackgroundKey] = true
         }
         if flags.contains(.underline) {

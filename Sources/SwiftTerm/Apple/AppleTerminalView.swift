@@ -539,6 +539,7 @@ struct FrameViewState: Sendable {
     let customBlockGlyphs: Bool
     let useBrightColors: Bool
     let minimumContrastRatio: CGFloat
+    let backgroundDrawnAsDefault: Attribute.Color?
     let selectionKeepsCellColors: Bool
     let bidiHostPolicy: BidiHostPolicy
     let glyphFallbackProvider: (any TerminalGlyphFallbackProvider)?
@@ -581,6 +582,7 @@ struct FrameViewState: Sendable {
         customBlockGlyphs = view.customBlockGlyphs
         useBrightColors = view.useBrightColors
         minimumContrastRatio = view.minimumContrastRatio
+        backgroundDrawnAsDefault = view.backgroundDrawnAsDefault
         selectionKeepsCellColors = view.selectionKeepsCellColors
         bidiHostPolicy = view.bidiHostPolicy
         glyphFallbackProvider = view.glyphFallbackProvider
@@ -648,6 +650,7 @@ struct SnapshotRenderContext {
     let customBlockGlyphs: Bool
     let useBrightColors: Bool
     let minimumContrastRatio: CGFloat
+    let backgroundDrawnAsDefault: Attribute.Color?
     let selectionKeepsCellColors: Bool
     let bidiHostPolicy: BidiHostPolicy
     let glyphFallbackProvider: (any TerminalGlyphFallbackProvider)?
@@ -708,6 +711,7 @@ struct SnapshotRenderContext {
         customBlockGlyphs = viewState.customBlockGlyphs
         useBrightColors = viewState.useBrightColors
         minimumContrastRatio = viewState.minimumContrastRatio
+        backgroundDrawnAsDefault = viewState.backgroundDrawnAsDefault
         selectionKeepsCellColors = viewState.selectionKeepsCellColors
         bidiHostPolicy = viewState.bidiHostPolicy
         glyphFallbackProvider = viewState.glyphFallbackProvider
@@ -730,6 +734,7 @@ struct SnapshotRenderContext {
         }
         identityHasher.combine(useBrightColors)
         identityHasher.combine(minimumContrastRatio)
+        identityHasher.combine(backgroundDrawnAsDefault)
         identityHasher.combine(selectionKeepsCellColors)
         identity = UInt64(bitPattern: Int64(identityHasher.finalize()))
     }

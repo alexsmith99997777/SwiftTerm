@@ -1827,6 +1827,18 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         }
     }
 
+    /// A background colour drawn as the default background: cells painted exactly this colour are not filled, so the
+    /// host's surface shows through them as through default-background cells. For a host that paints the surface
+    /// behind a transparent terminal and tells programs one colour for it (OSC 11): a program painting that colour
+    /// back would show as a box where the surface is lighter. The stored cells keep their colour; only the draw
+    /// changes. Nil (the default) fills every explicit background.
+    public var backgroundDrawnAsDefault: Attribute.Color? {
+        didSet {
+            guard backgroundDrawnAsDefault != oldValue else { return }
+            colorsChanged ()
+        }
+    }
+
     /// Controls whether this view applies the terminal's BiDi presentation state.
     public var bidiHostPolicy: BidiHostPolicy = .respectTerminal {
         didSet {
