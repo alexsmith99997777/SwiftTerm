@@ -264,6 +264,8 @@ final class FrameDriver {
     private var visibilitySuspensionEnabled = true
     private var effectivelyVisible = true
     private var lastReportedVisibility = true
+    /// The host's word on visibility (`setHostVisibilityOnMain`); nil leaves it to the report.
+    private var hostVisibilityValue: Bool?
     private var windowAttached = true
     private var visibilityObservers: [NSObjectProtocol] = []
     private var idleTickCount = 0
@@ -441,6 +443,21 @@ final class FrameDriver {
         applyVisibilityPolicyOnMain()
     }
 
+    /// The host's own word on whether the view can be seen, in place of the window server's
+    /// report. A host that corrects that report keeps its say here: the window server has
+    /// reported a window in view as occluded (an invisible window of another app lay over it),
+    /// and frames stopped until the report changed, while the host went on feeding (Shepi,
+    /// 2026-11-06). Nil, the default, returns the decision to the report. A view without a
+    /// window stays suspended either way.
+    func setHostVisibilityOnMain(_ visible: Bool?) {
+        hostVisibilityValue = visible
+        applyVisibilityPolicyOnMain()
+    }
+
+    var hostVisibility: Bool? {
+        hostVisibilityValue
+    }
+
     /// Reports whether the view has a window without permanently stopping the
     /// driver. Mobile views can leave and later re-enter a window hierarchy, so
     /// attachment is a reversible visibility input, not a shutdown event.
@@ -461,7 +478,7 @@ final class FrameDriver {
 #endif
 
     private func applyVisibilityPolicyOnMain() {
-        let visible = lastReportedVisibility && windowAttached
+        let visible = (hostVisibilityValue ?? lastReportedVisibility) && windowAttached
         let visibilityChanged = effectivelyVisible != visible
         effectivelyVisible = visible
         if visibilityChanged {

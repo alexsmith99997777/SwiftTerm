@@ -288,6 +288,42 @@ struct FrameDriverTests {
         driver.invalidate()
     }
 
+    /// Shepi (2026-11-06): the window server reported a window in view as occluded (an invisible
+    /// window of another app over it). The host knew better and kept feeding, but the driver had
+    /// stopped drawing until the report changed. The host's word overrides the report either
+    /// way; nil hands the decision back.
+    @Test func theHostsWordOnVisibilityOverridesTheWindowServersReport() async {
+        let source = ManualTickSource()
+        let driver = FrameDriver(tickSource: source)
+        var tickCount = 0
+        driver.onTick = { tickCount += 1 }
+
+        driver.setHostVisibilityOnMain(true)
+        driver.setVisibilityOnMain(visible: false)   // the report: covered
+        #expect(!driver.isVisibilitySuspended)
+        driver.markDirty()
+        await drainMainQueue()
+        #expect(tickCount == 1, "seen by the host's word, so the change is drawn")
+        #expect(source.isRunning)
+
+        driver.setHostVisibilityOnMain(false)
+        #expect(driver.isVisibilitySuspended)
+        #expect(!source.isRunning)
+        driver.markDirty()
+        await drainMainQueue()
+        #expect(tickCount == 1, "hidden by the host's word, whatever the report")
+
+        driver.setHostVisibilityOnMain(nil)   // the report decides again, and still says covered
+        #expect(driver.isVisibilitySuspended)
+        driver.setVisibilityOnMain(visible: true)
+        #expect(!driver.isVisibilitySuspended)
+        #expect(source.isRunning)
+        await drainMainQueue()
+        source.tick()
+        #expect(tickCount == 2, "the change that accumulated while hidden is drawn once seen")
+        driver.invalidate()
+    }
+
     /// Becoming visible again resumes, and the first tick draws the state that
     /// accumulated while hidden.
     @Test func becomingVisibleResumesAndDrawsCurrentState() async {

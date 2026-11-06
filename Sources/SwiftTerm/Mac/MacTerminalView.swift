@@ -290,6 +290,20 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
         }
     }
 
+    /// What the host knows about whether this view can be seen, in place of the window server's
+    /// occlusion report. Set it when the host decides visibility itself: the window server has
+    /// reported a window in view as covered (an invisible window of another app over it), and
+    /// with `suspendsRenderingWhenNotVisible` frames stopped until the report changed while the
+    /// host kept feeding (Shepi, 2026-11-06). Nil, the default, leaves the decision to the
+    /// report. A view without a window draws no frames either way.
+    public var hostVisibility: Bool? {
+        get { frameDriver?.hostVisibility }
+        set {
+            precondition(Thread.isMainThread)
+            frameDriver?.setHostVisibilityOnMain(newValue)
+        }
+    }
+
     var accessibility: AccessibilityService = AccessibilityService()
     var search: SearchService!
     private var findBar: TerminalFindBarView?
