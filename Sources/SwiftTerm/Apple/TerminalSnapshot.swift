@@ -145,6 +145,8 @@ final class TerminalSnapshot {
         var sourceIdentity: ObjectIdentifier? {
             sourceIdentityToken.map { ObjectIdentifier($0) }
         }
+        /// The source line's identity token itself, for a consumer that keeps it beyond this row (the Metal row cache).
+        var sourceToken: BufferLine.RenderIdentity? { sourceIdentityToken }
         var sourceGeneration: UInt64
         var bidiParagraphRevision: Int
         var bidiLayout: BidiRowLayout?
