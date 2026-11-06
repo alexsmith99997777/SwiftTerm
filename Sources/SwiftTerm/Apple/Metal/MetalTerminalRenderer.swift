@@ -401,7 +401,11 @@ struct RowDrawBuffers {
 }
 
 struct RowCacheEntry {
-    var sourceIdentity: ObjectIdentifier
+    /// The source line's identity token, retained: an entry outlives the snapshot row that pointed at its line, and an
+    /// identity kept only as an address could be taken by a line allocated later at the same place (ABA), whose
+    /// generation can match too; relocation and the cache check would then draw the freed line's text in its row.
+    let source: BufferLine.RenderIdentity
+    var sourceIdentity: ObjectIdentifier { ObjectIdentifier(source) }
     // Both are needed: snapshot Row.revision counters are per-Row-object, and
     // the snapshot's row pool can put a different Row (with an independently
     // colliding revision) at this screen index across refreshes. The source
@@ -1588,7 +1592,8 @@ final class MetalTerminalRenderer {
             guard let snapshotRow = snapshot.row(atAbsolute: absoluteRow) else {
                 continue
             }
-            let sourceIdentity = snapshotRow.sourceIdentity!
+            let source = snapshotRow.sourceToken!
+            let sourceIdentity = ObjectIdentifier(source)
             var entry = rowCache[absoluteRow]
             let rowCanRelocate = snapshotRow.bidiLayout == nil && snapshotRow.images.isEmpty
             if canRelocate, rowCanRelocate,
@@ -1597,7 +1602,7 @@ final class MetalTerminalRenderer {
                let previousData = previous.entry.data {
                 let offset = Float(CGFloat(previous.row - absoluteRow) * cellHeight * scale)
                 let data = previousData.translatedVertically(by: offset)
-                entry = RowCacheEntry(sourceIdentity: sourceIdentity,
+                entry = RowCacheEntry(source: source,
                                       sourceGeneration: snapshotRow.sourceGeneration,
                                       revision: snapshotRow.revision,
                                       canRelocate: true, data: data,
@@ -1626,7 +1631,7 @@ final class MetalTerminalRenderer {
                                            viewWidthPx: viewWidthPx,
                                            scale: scale)
                 let buffers = bufferingMode == .perRowPersistent ? makeRowBuffers(from: rowData) : nil
-                entry = RowCacheEntry(sourceIdentity: sourceIdentity,
+                entry = RowCacheEntry(source: source,
                                       sourceGeneration: snapshotRow.sourceGeneration,
                                       revision: snapshotRow.revision,
                                       canRelocate: rowCanRelocate,
@@ -1646,7 +1651,7 @@ final class MetalTerminalRenderer {
                                                           viewWidthPx: viewWidthPx,
                                                           scale: scale)
                 if cached.data == nil {
-                    entry = RowCacheEntry(sourceIdentity: sourceIdentity,
+                    entry = RowCacheEntry(source: source,
                                           sourceGeneration: snapshotRow.sourceGeneration,
                                           revision: snapshotRow.revision,
                                           canRelocate: rowCanRelocate,
